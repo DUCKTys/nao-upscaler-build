@@ -1,76 +1,67 @@
 name: Build Nao AI Video Upscaler
-  - name: Build
-  working-directory: /tmp/nao-upscaler/source
-  run: |
-    # Perbaiki hardcoded path di webpack.config.js jika ada (mengganti nao-upcaler jadi nao-upscaler)
-    sed -i 's/nao-upcaler/nao-upscaler/g' webpack.config.js || echo "Tidak ada perubahan"
-    npm run build
+
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/workflows/build-upscaler.yml"
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout Nao
-        uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
-      - name: Download official upscaler source
+      - name: Download official source
         run: |
+          set -e
+
           mkdir -p /tmp/nao-upscaler
           cd /tmp/nao-upscaler
-          npm pack github:sb2702/free-ai-video-upscaler#main
-          mkdir source
-          tar -xzf free-video-upscaler-*.tgz -C source --strip-components=1
 
-      - name: Install upscaler dependencies
+          npm pack github:sb2702/free-ai-video-upscaler#main
+
+          mkdir source
+
+          tar -xzf free-video-upscaler-*.tgz \
+            -C source \
+            --strip-components=1
+
+      - name: Install dependencies
         working-directory: /tmp/nao-upscaler/source
-        run: npm install
+        run: |
+          npm install
 
       - name: Build upscaler
         working-directory: /tmp/nao-upscaler/source
-        run: npm run build
-
-      - name: Find build output
         run: |
-          echo "=== BUILD DIRECTORY ==="
-          find /tmp/nao-upscaler/source -maxdepth 2 -type d | sort
+          npm run build
 
-          echo "=== BUILD FILES ==="
-          find /tmp/nao-upscaler/source -maxdepth 3 -type f | sort | head -200
-
-      - name: Prepare Nao upscaler
+      - name: Check build
         run: |
-          rm -rf nao-upscaler-build
-          mkdir -p nao-upscaler-build
+          echo "=== BUILD RESULT ==="
+          find /tmp/nao-upscaler/source/dist -maxdepth 3 -type f | sort
 
-          if [ -d "/tmp/nao-upscaler/source/dist" ]; then
-            cp -R /tmp/nao-upscaler/source/dist/. nao-upscaler-build/
-          elif [ -d "/tmp/nao-upscaler/source/build" ]; then
-            cp -R /tmp/nao-upscaler/source/build/. nao-upscaler-build/
-          else
-            echo "Build output tidak ditemukan."
-            exit 1
-          fi
+      - name: Prepare artifact
+        run: |
+          set -e
 
-          echo "=== FINAL ARTIFACT ==="
-          find nao-upscaler-build -type f | sort
+          rm -rf nao-upscaler
+          mkdir -p nao-upscaler
 
-      - name: Upload Nao Upscaler
+          cp -R /tmp/nao-upscaler/source/dist/. nao-upscaler/
+
+          echo "=== ARTIFACT ==="
+          find nao-upscaler -type f | sort
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: nao-ai-video-upscaler
-          path: nao-upscaler-build
-          compression-level: 9
+          path: nao-upscaler
           if-no-files-found: error
           retention-days: 7
