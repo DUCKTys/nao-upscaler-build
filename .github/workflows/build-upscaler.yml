@@ -15,7 +15,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
       - name: Download official source
         run: |
@@ -45,14 +44,14 @@ jobs:
           file = Path("webpack.config.js")
           text = file.read_text()
 
-          old = '/tmp/nao-upscaler/source/src/*.js'
+          old = "/tmp/nao-upscaler/source/src/*.js"
 
           if old in text:
-              text = text.replace(old, 'src/*.js')
+              text = text.replace(old, "src/*.js")
               file.write_text(text)
               print("Fixed webpack source glob.")
           else:
-              print("No legacy /tmp/nao-upscaler/source/src/*.js found.")
+              print("No legacy source glob found.")
           PY
 
           echo "=== webpack.config.js AFTER FIX ==="
