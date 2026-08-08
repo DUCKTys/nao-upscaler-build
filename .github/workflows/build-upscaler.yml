@@ -19,6 +19,7 @@ jobs:
       - name: Download official source
         run: |
           set -e
+
           rm -rf /tmp/nao-upscaler
           mkdir -p /tmp/nao-upscaler
           cd /tmp/nao-upscaler
@@ -26,59 +27,189 @@ jobs:
           npm pack github:sb2702/free-ai-video-upscaler#main
 
           mkdir source
+
           tar -xzf free-video-upscaler-*.tgz \
             -C source \
             --strip-components=1
+
+          echo "=== SOURCE DOWNLOADED ==="
+          find source -maxdepth 2 -type f | sort
+
+      - name: Inspect source
+        working-directory: /tmp/nao-upscaler/source
+        run: |
+          set -e
+
+          echo "================================"
+          echo "PROJECT FILES"
+          echo "================================"
+
+          find . -maxdepth 3 -type f \
+            ! -path "./node_modules/*" \
+            ! -path "./.git/*" \
+            | sort
+
+          echo
+          echo "================================"
+          echo "WEBPACK FILES"
+          echo "================================"
+
+          find . -type f \
+            ! -path "./node_modules/*" \
+            ! -path "./.git/*" \
+            | grep -Ei 'webpack|config' || true
+
+          echo
+          echo "================================"
+          echo "SEARCH LEGACY PATH"
+          echo "================================"
+
+          grep -R -n \
+            -E '/tmp/nao-upscaler|source/src|src/\*\.js' \
+            . \
+            --exclude-dir=node_modules \
+            --exclude-dir=.git \
+            || true
 
       - name: Fix webpack configuration
         working-directory: /tmp/nao-upscaler/source
         run: |
           set -e
 
-          echo "=== webpack.config.js ==="
-          cat webpack.config.js
-
           python3 - <<'PY'
           from pathlib import Path
 
-          file = Path("webpack.config.js")
-          text = file.read_text()
+          root = Path(".")
 
-          old = "/tmp/nao-upscaler/source/src/*.js"
+          replacements = {
+              "/tmp/nao-upscaler/source/src/*.js": "src/*.js",
+              "/tmp/nao-upscaler/source/src/": "src/",
+              "/tmp/nao-upscaler/source/": "./",
+          }
 
-          if old in text:
-              text = text.replace(old, "src/*.js")
-              file.write_text(text)
-              print("Fixed webpack source glob.")
+          changed = []
+
+          allowed = {
+              ".js",
+              ".cjs",
+              ".mjs",
+              ".json",
+              ".ts",
+              ".yml",
+              ".yaml"
+          }
+
+          for file in root.rglob("*"):
+              if not file.is_file():
+                  continue
+
+              if "node_modules" in file.parts:
+                  continue
+
+              if ".git" in file.parts:
+                  continue
+
+              if file.suffix not in allowed:
+                  continue
+
+              try:
+                  text = file.read_text()
+              except Exception:
+                  continue
+
+              original = text
+
+              for old, new in replacements.items():
+                  text = text.replace(old, new)
+
+              if text != original:
+                  file.write_text(text)
+                  changed.append(str(file))
+
+          print("=== FILES FIXED ===")
+
+          if changed:
+              for file in changed:
+                  print(file)
           else:
-              print("No legacy source glob found.")
+              print("No legacy paths found.")
           PY
 
-          echo "=== webpack.config.js AFTER FIX ==="
-          cat webpack.config.js
+          echo
+          echo "================================"
+          echo "VERIFY LEGACY PATH"
+          echo "================================"
+
+          if grep -R -n \
+            -E '/tmp/nao-upscaler/source/src|/tmp/nao-upscaler/source/' \
+            . \
+            --exclude-dir=node_modules \
+            --exclude-dir=.git; then
+            echo "ERROR: Legacy path still exists."
+            exit 1
+          fi
+
+          echo "Legacy path not found."
 
       - name: Install dependencies
         working-directory: /tmp/nao-upscaler/source
         run: |
+          set -e
           npm install
+
+      - name: Show build configuration
+        working-directory: /tmp/nao-upscaler/source
+        run: |
+          echo "================================"
+          echo "PACKAGE.JSON"
+          echo "================================"
+          cat package.json
+
+          echo
+          echo "================================"
+          echo "WEBPACK CONFIG"
+          echo "================================"
+
+          for file in webpack.config.js webpack.config.cjs webpack.config.mjs; do
+            if [ -f "$file" ]; then
+              echo "===== $file ====="
+              cat "$file"
+              echo
+            fi
+          done
 
       - name: Build upscaler
         working-directory: /tmp/nao-upscaler/source
         run: |
+          set -e
           npm run build
 
       - name: Check build
         run: |
           set -e
 
-          echo "=== BUILD RESULT ==="
+          DIST="/tmp/nao-upscaler/source/dist"
 
-          if [ ! -d "/tmp/nao-upscaler/source/dist" ]; then
+          echo "================================"
+          echo "BUILD RESULT"
+          echo "================================"
+
+          if [ ! -d "$DIST" ]; then
             echo "ERROR: dist directory was not created."
             exit 1
           fi
 
-          find /tmp/nao-upscaler/source/dist -type f | sort
+          echo "dist directory found."
+          echo
+
+          find "$DIST" -type f -printf '%P\n' | sort
+
+          echo
+          echo "================================"
+          echo "BUILD SIZE"
+          echo "================================"
+
+          du -sh "$DIST"
 
       - name: Prepare artifact
         run: |
@@ -87,10 +218,22 @@ jobs:
           rm -rf nao-upscaler
           mkdir -p nao-upscaler
 
-          cp -R /tmp/nao-upscaler/source/dist/. nao-upscaler/
+          cp -R \
+            /tmp/nao-upscaler/source/dist/. \
+            nao-upscaler/
 
-          echo "=== ARTIFACT ==="
-          find nao-upscaler -type f | sort
+          echo "================================"
+          echo "ARTIFACT CONTENT"
+          echo "================================"
+
+          find nao-upscaler -type f -printf '%P\n' | sort
+
+          echo
+          echo "================================"
+          echo "ARTIFACT SIZE"
+          echo "================================"
+
+          du -sh nao-upscaler
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
