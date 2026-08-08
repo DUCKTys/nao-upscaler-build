@@ -15,21 +15,48 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
 
       - name: Download official source
         run: |
           set -e
-
+          rm -rf /tmp/nao-upscaler
           mkdir -p /tmp/nao-upscaler
           cd /tmp/nao-upscaler
 
           npm pack github:sb2702/free-ai-video-upscaler#main
 
           mkdir source
-
           tar -xzf free-video-upscaler-*.tgz \
             -C source \
             --strip-components=1
+
+      - name: Fix webpack configuration
+        working-directory: /tmp/nao-upscaler/source
+        run: |
+          set -e
+
+          echo "=== webpack.config.js ==="
+          cat webpack.config.js
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          file = Path("webpack.config.js")
+          text = file.read_text()
+
+          old = '/tmp/nao-upscaler/source/src/*.js'
+
+          if old in text:
+              text = text.replace(old, 'src/*.js')
+              file.write_text(text)
+              print("Fixed webpack source glob.")
+          else:
+              print("No legacy /tmp/nao-upscaler/source/src/*.js found.")
+          PY
+
+          echo "=== webpack.config.js AFTER FIX ==="
+          cat webpack.config.js
 
       - name: Install dependencies
         working-directory: /tmp/nao-upscaler/source
@@ -43,8 +70,16 @@ jobs:
 
       - name: Check build
         run: |
+          set -e
+
           echo "=== BUILD RESULT ==="
-          find /tmp/nao-upscaler/source/dist -maxdepth 3 -type f | sort
+
+          if [ ! -d "/tmp/nao-upscaler/source/dist" ]; then
+            echo "ERROR: dist directory was not created."
+            exit 1
+          fi
+
+          find /tmp/nao-upscaler/source/dist -type f | sort
 
       - name: Prepare artifact
         run: |
