@@ -1,5 +1,9 @@
 name: Build Nao AI Video Upscaler
-
+  working-directory: /tmp/nao-upscaler/source
+  run: |
+    # Perbaiki hardcoded path di webpack.config.js jika ada (mengganti nao-upcaler jadi nao-upscaler)
+    sed -i 's/nao-upcaler/nao-upscaler/g' webpack.config.js || echo "Tidak ada perubahan"
+    npm run build
 on:
   workflow_dispatch:
   push:
